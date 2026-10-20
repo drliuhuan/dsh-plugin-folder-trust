@@ -44,7 +44,10 @@
     }
   },
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "release:check": "node --test test/*.test.mjs && npm pack --dry-run",
+    "release:publish": "npm publish --access public",
+    "release:trust": "npm trust github dsh-plugin-folder-trust --file publish.yml --repo drliuhuan/dsh-plugin-folder-trust --allow-publish -y"
   },
   "repository": {
     "type": "git",
