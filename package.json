@@ -55,7 +55,6 @@
     "url": "https://github.com/drliuhuan/dsh-plugin-folder-trust/issues"
   },
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   }
 }
