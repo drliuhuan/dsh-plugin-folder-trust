@@ -1,0 +1,61 @@
+{
+  "name": "dsh-plugin-folder-trust",
+  "version": "0.2.0",
+  "description": "Windows: when a new workspace folder is added, ask once whether to trust it, then grant the NTFS rights DSH's workspace-write sandbox needs. Also shows a permission check in the composer when the current workspace is unusable, and lists every workspace in Settings.",
+  "type": "module",
+  "license": "MIT",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "deepseek-harness",
+    "dsh-plugin",
+    "workspace",
+    "sandbox",
+    "acl",
+    "windows"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/drliuhuan/dsh-plugin-folder-trust.git"
+  },
+  "homepage": "https://github.com/drliuhuan/dsh-plugin-folder-trust#readme",
+  "bugs": {
+    "url": "https://github.com/drliuhuan/dsh-plugin-folder-trust/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

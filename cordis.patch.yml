@@ -1,0 +1,14 @@
+# dsh-plugin-folder-trust — bundle patch.
+#
+# Windows only: DSH's workspace-write sandbox provisions a write grant by editing
+# the workspace folder's NTFS permissions, which needs WRITE_DAC *and* WRITE_OWNER
+# on that folder. This row watches newly added workspaces and offers a one-click
+# trust/repair prompt when the folder lacks either right.
+#
+# The row name must stay the BARE package name: DSH's client-module scanner uses it
+# to discover the package's `dsh.client` bundle (client.js).
+
+- insert:
+    - id: folder-trust
+      name: 'dsh-plugin-folder-trust'
+      disabled: !!js process.platform !== 'win32'
