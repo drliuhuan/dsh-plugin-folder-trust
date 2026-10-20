@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "title": { "en": "dsh-plugin-folder-trust", "zh": "工作区文件夹信任" },
+  "description": { "en": "Workspace folder trust and NTFS ACL repair for the Windows sandbox." },
+  "plugins": [
+    {
+      "name": "dsh-plugin-folder-trust",
+      "title": { "en": "Folder Trust", "zh": "工作区权限" },
+      "description": { "en": "Trust a new workspace folder once and grant the NTFS rights the Windows sandbox needs, including existing subfolders.", "zh": "为新工作区授权并补齐 Windows 沙箱所需的 NTFS 权限，含已有子目录。" },
+      "author": "drliuhuan",
+      "homepage": "https://github.com/drliuhuan/dsh-plugin-folder-trust#readme",
+      "repository": { "type": "git", "url": "https://github.com/drliuhuan/dsh-plugin-folder-trust.git" },
+      "versions": [
+        { "version": "0.2.0", "publishTimestamp": 1792458600, "source": { "type": "npm" } }
+      ]
+    }
+  ]
+}
