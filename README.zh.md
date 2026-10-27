@@ -67,6 +67,8 @@ DSH 的工作区行「…」菜单**没有插件扩展点**（rename/delete 是 
 - **不会提权**：用的是 DSH 自己的令牌。目录连 WRITE_DAC 都没有（例如属主是 SYSTEM、你只有读取或修改权限）时，插件会失败并提示改用「完全权限」或让管理员修一次。
 - **工作区包含 `%TEMP%`**（例如直接拿 `C:\Users\<你>` 当工作区）时沙箱结构性不可用：信任弹窗只说明原因、不给「信任」，检查按钮与设置页把它标为不可用且不提供修复。
 - 授权只落在工作区子树，不改文件内容、不改属主、不删任何 ACE；`state.json` 记录已信任/已拒绝/已铺开的路径。
+- **解释器优先 PowerShell 7**：helper 脚本走 `Get-Acl` / `Set-Acl`（5.1 与 7 都有），Low 标签那段是 P/Invoke，两种解释器都跑得通，所以按「`pwsh`（7）→ Windows PowerShell 5.1」的顺序挑一个，`FOLDER_TRUST_POWERSHELL` 可钉住指定可执行文件。早先硬编码 `powershell.exe`，是因为脚本用了 .NET Framework 专有的 `DirectoryInfo.GetAccessControl()`——7.6（.NET 10）里没有这个方法，那是 5.1 成为硬依赖的唯一原因。
+- **是否真的可用看标签，不只看授权**：受限 shell 的令牌是 Low 完整性 + 写受限，缺 Low 标签时能力 SID 的 ACE 是空的。检查项里因此包含标签（`lowLabel`），修复也只有在标签真正写上之后才算成功。
 - 只影响 Windows；其他平台该行不会被插入。
 
 ## 安装 / 卸载

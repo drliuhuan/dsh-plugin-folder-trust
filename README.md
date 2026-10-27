@@ -11,6 +11,11 @@ See [README.zh.md](README.zh.md) for the full design notes (Chinese).
 
     dsh plugin install dsh-plugin-folder-trust
 
+## Requirements
+
+Windows 10/11. The permission helpers run under PowerShell 7 when it is installed and fall back to
+Windows PowerShell 5.1 otherwise; `FOLDER_TRUST_POWERSHELL` pins one explicitly.
+
 ## License
 
 MIT

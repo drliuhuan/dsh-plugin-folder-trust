@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)][string]$Path,
     [Parameter(Mandatory = $true)][string]$Sid,
     [Parameter(Mandatory = $true)][string]$Out
@@ -109,7 +109,7 @@ try {
 
     $sidObj = New-Object System.Security.Principal.SecurityIdentifier($Sid)
     $world = New-Object System.Security.Principal.SecurityIdentifier('S-1-1-0')
-    $acl = $info.GetAccessControl()
+    $acl = Get-Acl -LiteralPath $Path
     $report.rootGrant = @($acl.Access | Where-Object {
         $_.AccessControlType -eq 'Allow' -and
         (Get-AceSid $_) -eq $sidObj.Value -and
@@ -126,7 +126,7 @@ try {
     $inherited = 0
     foreach ($child in $dirs) {
         try {
-            $childAcl = $child.GetAccessControl()
+            $childAcl = Get-Acl -LiteralPath $child.FullName
             $has = @($childAcl.Access | Where-Object {
                 $_.AccessControlType -eq 'Allow' -and
                 (Get-AceSid $_) -eq $sidObj.Value -and

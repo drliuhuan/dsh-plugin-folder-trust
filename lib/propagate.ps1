@@ -79,7 +79,7 @@ try {
     Log 'STEP 1/7 检查账户权限与完整性标签写入权'
     # 1. The signed-in user needs WRITE_DAC + WRITE_OWNER before any of the
     #    sandbox edits below can be made at all (non-inherited, like the repair).
-    $acl = $info.GetAccessControl()
+    $acl = Get-Acl -LiteralPath $Path
     $userRules = @($acl.Access | Where-Object {
         $_.AccessControlType -eq 'Allow' -and
         ([int]$_.FileSystemRights -band [int][System.Security.AccessControl.FileSystemRights]'FullControl') -eq [int][System.Security.AccessControl.FileSystemRights]'FullControl' -and
@@ -125,11 +125,11 @@ try {
         $result.denyAce = $true
     }
 
-    # 3. Write the DACL back BY NAME (File/Directory.SetAccessControl uses
+    # 3. Write the DACL back BY NAME (`Set-Acl` uses
     #    SetNamedSecurityInfoW), which is what makes Windows propagate the
     #    inheritable ACEs to every existing child. A handle-based write would
     #    only change this one directory.
-    [System.IO.Directory]::SetAccessControl($Path, $acl)
+    Set-Acl -LiteralPath $Path -AclObject $acl
     Log 'STEP 3/7 写入能力 SID 的写/删 ACE 与 Everyone 删除子项 deny'
 
     Log 'STEP 4/7 写入 Low 完整性标签（先 Medium 再 Low，逼出传播）'
@@ -159,9 +159,9 @@ try {
         [System.Security.AccessControl.FileSystemRights]'ReadAttributes',
         [System.Security.AccessControl.AccessControlType]'Allow')
     $acl.AddAccessRule($probeRule)
-    [System.IO.Directory]::SetAccessControl($Path, $acl)
+    Set-Acl -LiteralPath $Path -AclObject $acl
     $acl.RemoveAccessRuleSpecific($probeRule)
-    [System.IO.Directory]::SetAccessControl($Path, $acl)
+    Set-Acl -LiteralPath $Path -AclObject $acl
     # (the second write carries the final DACL, so the inherit pass leaves it correct)
 
     Log 'STEP 6/7 逐个子目录补齐 ACE 与标签'
@@ -172,7 +172,7 @@ try {
     try {
         foreach ($child in $info.GetDirectories()) {
             try {
-                $childAcl = $child.GetAccessControl()
+                $childAcl = Get-Acl -LiteralPath $child.FullName
                 $has = @($childAcl.Access | Where-Object {
                     (Get-AceSid $_) -eq $sidObj.Value -and
                     ([int]$_.FileSystemRights -band $GRANT_MASK) -eq $GRANT_MASK
@@ -184,7 +184,7 @@ try {
                         [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit',
                         [System.Security.AccessControl.PropagationFlags]'None',
                         [System.Security.AccessControl.AccessControlType]'Allow')))
-                    [System.IO.Directory]::SetAccessControl($child.FullName, $childAcl)
+                    Set-Acl -LiteralPath $child.FullName -AclObject $childAcl
                     $repaired++
                     Log ('CHILD ' + $child.Name + ' - ok')
                 }
@@ -200,7 +200,7 @@ try {
     try {
         $child = Get-ChildItem -LiteralPath $Path -Directory -Force -ErrorAction Stop | Select-Object -First 1
         if ($null -ne $child) {
-            $childAcl = (New-Object System.IO.DirectoryInfo($child.FullName)).GetAccessControl()
+            $childAcl = Get-Acl -LiteralPath $child.FullName
             $granted = @($childAcl.Access | Where-Object {
                 (Get-AceSid $_) -eq $sidObj.Value -and
                 ([int]$_.FileSystemRights -band $GRANT_MASK) -eq $GRANT_MASK
