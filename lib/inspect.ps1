@@ -16,6 +16,8 @@ $report = [ordered]@{
     writeOwner = $false
     rootGrant = $false
     rootDeny = $false
+    lowLabel = 'unknown'
+    labelError = $null
     childDirs = 0
     childDirsWithGrant = 0
     childFiles = 0
@@ -38,6 +40,59 @@ public static class DshTrustProbe2 {
     }
 }
 '@
+
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class DshTrustLabelRead {
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    public static extern uint GetNamedSecurityInfoW(string name, int objectType, uint info,
+        IntPtr owner, IntPtr group, IntPtr dacl, IntPtr sacl, out IntPtr descriptor);
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool GetSecurityDescriptorSacl(IntPtr descriptor, out bool present, out IntPtr sacl, out bool defaultValue);
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool GetAclInformation(IntPtr acl, IntPtr info, uint size, uint infoClass);
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool GetAce(IntPtr acl, uint index, out IntPtr ace);
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr LocalFree(IntPtr handle);
+}
+'@
+
+# The Low integrity label is HALF of a usable grant, and the half this plugin used
+# to assume: `@deepseek-ai/dsh-sandbox-windows-acl` calls a folder provisioned only
+# when the capability grant, the Everyone deny AND the Low no-write-up label are all
+# present. Reading a label does NOT need SeSecurityPrivilege (only writing one does),
+# so the state can be diagnosed without it.
+$LABEL_INFO = [uint32]0x00000010
+$LOW_SID = 'S-1-16-4096'
+$NO_WRITE_UP = 0x1
+
+function Get-IntegrityState([string]$target) {
+    $descriptor = [IntPtr]::Zero
+    $rc = [DshTrustLabelRead]::GetNamedSecurityInfoW($target, 1, $LABEL_INFO, [IntPtr]::Zero, [IntPtr]::Zero, [IntPtr]::Zero, [IntPtr]::Zero, [ref]$descriptor)
+    if ($rc -ne 0) { throw "GetNamedSecurityInfoW failed with $rc" }
+    try {
+        $present = $false; $sacl = [IntPtr]::Zero; $defaulted = $false
+        if (-not [DshTrustLabelRead]::GetSecurityDescriptorSacl($descriptor, [ref]$present, [ref]$sacl, [ref]$defaulted)) { throw 'GetSecurityDescriptorSacl failed' }
+        if (-not $present -or $sacl -eq [IntPtr]::Zero) { return 'none' }
+        $sizeInfo = [System.Runtime.InteropServices.Marshal]::AllocHGlobal(16)
+        try {
+            if (-not [DshTrustLabelRead]::GetAclInformation($sacl, $sizeInfo, 12, 2)) { throw 'GetAclInformation failed' }
+            $count = [System.Runtime.InteropServices.Marshal]::ReadInt32($sizeInfo, 4)
+            for ($i = 0; $i -lt $count; $i++) {
+                $ace = [IntPtr]::Zero
+                if (-not [DshTrustLabelRead]::GetAce($sacl, [uint32]$i, [ref]$ace)) { continue }
+                if ([System.Runtime.InteropServices.Marshal]::ReadByte($ace) -ne 0x11) { continue }
+                $policy = [System.Runtime.InteropServices.Marshal]::ReadInt32($ace, 4)
+                $sid = (New-Object System.Security.Principal.SecurityIdentifier([IntPtr]::Add($ace, 8))).Value
+                if ($sid -eq $LOW_SID -and (($policy -band $NO_WRITE_UP) -eq $NO_WRITE_UP)) { return 'low' }
+                return 'other'
+            }
+            return 'other'
+        } finally { [void][System.Runtime.InteropServices.Marshal]::FreeHGlobal($sizeInfo) }
+    } finally { [void][DshTrustLabelRead]::LocalFree($descriptor) }
+}
 
 function Get-AceSid($ace) {
     try { return $ace.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value }
@@ -82,6 +137,11 @@ try {
     }
     $report.childDirsWithGrant = $inherited
     try { $report.childFiles = @($info.GetFiles()).Count } catch { }
+    try { $report.lowLabel = Get-IntegrityState($Path) }
+    catch {
+        $report.lowLabel = 'unknown'
+        $report.labelError = $_.Exception.Message
+    }
     $report.ok = $true
 } catch {
     $report.error = $_.Exception.Message

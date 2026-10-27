@@ -16,6 +16,7 @@ function row(overrides = {}, permissions = {}) {
       writeDac: true,
       writeOwner: true,
       rootGrant: true,
+      lowLabel: 'low',
       childDirs: 2,
       childDirsWithGrant: 2,
       ...permissions
@@ -62,6 +63,27 @@ test('an unreadable report is an issue and is offered for repair', () => {
   assert.deepEqual(issueCodes(entry), ['unreadable']);
   assert.equal(entryNeedsRepair(entry), true);
   assert.equal(permissionFacts(entry).readable, false);
+});
+
+test('a folder without the sandbox Low label still needs repair', () => {
+  // The confined shell is Low-integrity and write-restricted: the capability grant
+  // without the Low no-write-up label is inert, and every write is denied. DSH itself
+  // counts a folder provisioned only when grant + deny + label all hold, so a report
+  // that says "no issues" here is exactly the silent failure this rule prevents.
+  const missing = row({}, { lowLabel: 'none' });
+  assert.deepEqual(issueCodes(missing), ['label']);
+  assert.equal(entryNeedsRepair(missing), true);
+  const medium = row({}, { lowLabel: 'other' });
+  assert.deepEqual(issueCodes(medium), ['label']);
+  assert.equal(entryNeedsRepair(medium), true);
+  // An older host does not report the label; absence of the fact is not a verdict.
+  assert.deepEqual(issueCodes(row({}, { lowLabel: 'unknown' })), []);
+  assert.deepEqual(issueCodes(row({}, { lowLabel: undefined })), []);
+});
+
+test('the label issue is reported after the grant and child facts', () => {
+  const entry = row({}, { rootGrant: false, lowLabel: 'none' });
+  assert.deepEqual(issueCodes(entry), ['rootGrant', 'label']);
 });
 
 test('findWorkspace matches on the normalized path only', () => {

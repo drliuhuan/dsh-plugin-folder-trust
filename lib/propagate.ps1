@@ -211,8 +211,19 @@ try {
         $sample = [pscustomobject]@{ path = $null; error = $_.Exception.Message }
     }
     $result.sample = $sample
-    $result.ok = $true
-    Log 'DONE 修复完成'
+    # A folder is only usable once the Low label is ON it: the sandbox's write token is a
+    # Low-integrity, write-restricted one, so the capability grant alone is inert. Writing
+    # a label needs SeSecurityPrivilege, which the user's own token does not carry — so this
+    # can legitimately fail here. It used to be swallowed (`ok` was set unconditionally),
+    # which made the repair report success on a folder the sandbox still refused.
+    if ($result.labelApplied -eq $true) {
+        $result.ok = $true
+    } else {
+        $detail = if ($result.labelError) { $result.labelError } else { 'unknown error' }
+        $result.ok = $false
+        $result.error = 'the Low integrity label could not be written: ' + $detail + ' — an administrator has to run DSH once, or this session has to switch to full access'
+    }
+    Log ('DONE 修复完成 ok=' + $result.ok)
 } catch {
     $result.error = $_.Exception.Message
 }
