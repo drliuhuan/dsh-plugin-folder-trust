@@ -14,6 +14,9 @@ $report = [ordered]@{
     ok = $false
     writeDac = $false
     writeOwner = $false
+    owner = $null
+    ownerName = $null
+    ownerKind = 'unknown'
     rootGrant = $false
     rootDeny = $false
     lowLabel = 'unknown'
@@ -107,9 +110,35 @@ try {
     $report.writeDac = ([DshTrustProbe2]::Open($Path, [uint32]0x00040000) -eq 0)
     $report.writeOwner = ([DshTrustProbe2]::Open($Path, [uint32]0x00080000) -eq 0)
 
+    # Who owns the folder decides HOW the missing right can be repaired. Windows
+    # always grants the owner implicit READ_CONTROL and WRITE_DAC, so a folder
+    # whose owner is the signed-in account never needs help — but an account SID
+    # that no longer resolves on this machine (a folder copied from another PC)
+    # is an owner nobody can inherit rights from, and only an approved elevation
+    # can rewrite that DACL. Classifying the owner here lets the browser say why
+    # instead of repeating "permission denied".
+    $acl = Get-Acl -LiteralPath $Path
+    $meSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    # Get-Acl returns the owner in SDDL form ("O:S-1-5-21-..."), not a bare SID.
+    $ownerSid = ([string]$acl.Owner) -replace '^O:', ''
+    $report.owner = $ownerSid
+    $report.ownerName = $ownerSid
+    if ($ownerSid.Length -gt 0) {
+        try {
+            $ownerIdentity = New-Object System.Security.Principal.SecurityIdentifier($ownerSid)
+            try { $report.ownerName = $ownerIdentity.Translate([System.Security.Principal.NTAccount]).Value }
+            catch { $report.ownerName = $ownerSid }
+            if ($ownerIdentity.Value -eq $meSid) { $report.ownerKind = 'current' }
+            elseif ($ownerSid -eq 'S-1-5-18' -or $ownerSid.StartsWith('S-1-5-32-')) { $report.ownerKind = 'system' }
+            elseif ($report.ownerName -eq $ownerSid) { $report.ownerKind = 'foreign' }
+            else { $report.ownerKind = 'local-other' }
+        } catch {
+            $report.ownerKind = 'unknown'
+        }
+    }
+
     $sidObj = New-Object System.Security.Principal.SecurityIdentifier($Sid)
     $world = New-Object System.Security.Principal.SecurityIdentifier('S-1-1-0')
-    $acl = Get-Acl -LiteralPath $Path
     $report.rootGrant = @($acl.Access | Where-Object {
         $_.AccessControlType -eq 'Allow' -and
         (Get-AceSid $_) -eq $sidObj.Value -and

@@ -15,6 +15,20 @@ DSH 在 Windows 上把「工作区内修改」实现成：受限令牌 + 按工�
    - **信任文件夹**：给你的账户补一条完全控制 ACE，再按 DSH 的算法把能力 SID 的 ACE 与 Low 标签铺进已有子树，校验后记住该路径；
    - **忽略**：只把该路径记进 `state.json` 的 `dismissed`，**不会再为这个文件夹弹窗**，也不改动任何权限。弹窗里明说了后续代价：在「工作区内修改」模式下 DSH 仍无法为它准备写权限，之后每次需要在其中写入时沙箱都会再次请求授权（或临时切到「完全权限」）。
 
+### 属主不是本机账户时：一次 UAC 授权
+
+Windows 只给**所有者本人**隐式 `WRITE_DAC`。从另一台电脑整包拷过来的目录，`DACL` 里带的是那台机器的账户 SID（本机解析不出来），当前账户通常只靠 `Authenticated Users` 拿到「修改」——能改文件、不能改权限，于是任何非提权的补权限都会在 `SetNamedSecurityInfoW` 上返回 5。这时只有一种合法出路：让 Windows 问用户一次，用你批准过的管理员令牌去改。
+
+插件因此分组处理（`lib/status.mjs` 的 `ownerNeedsElevation`，判定来自探测里的 `ownerKind`）：
+
+| `ownerKind` | 含义 | 修复方式 |
+|---|---|---|
+| `current` | 属主就是你 | 直接补 ACE，不弹窗 |
+| `local-other` / `system` | 本机其它账户 / SYSTEM、内置组 | 缺少 `WRITE_DAC` 时走 UAC |
+| `foreign` | SID 在本机解析不出来（从别的电脑拷来） | 走 UAC |
+
+走 UAC 时弹窗先说明原因（「这个文件夹来自另一台电脑：所有者 … 不属于本机账户」），按钮变成「以管理员身份修复」；点击后 `lib/elevate.ps1` 用 `Start-Process -Verb RunAs` 拉起同一份 `propagate.ps1`，**一次授权同时完成**：补当前账户完全控制、写能力 SID 与 Everyone deny、写 Low 标签、铺进已有子树。用户点「否」时不会做任何改动，并明确回报“已取消”。UAC 窗口本身就是审计记录——插件不会静默提权，也不会在取消后重试。
+
 ## 输入框里的权限检查
 
 DSH 的工作区行「…」菜单**没有插件扩展点**（rename/delete 是 dsh-client-ui-workspace 里写死的数组，只有*会话行*菜单是 slot），所以检查入口放在输入框右侧的控制行，紧挨着 pwsh7 那个 chip：
@@ -54,7 +68,8 @@ DSH 的工作区行「…」菜单**没有插件扩展点**（rename/delete 是 
 | `index.js` | 宿主入口：注入 `webServer`，等 `workspaceRegistry` 就绪后启动轮询，注册路由 |
 | `lib/service.mjs` | 工作区判定、待信任队列、`~/.dsh/folder-trust/state.json` 持久化、报告行（含 `issues` / `needsRepair` / `sessionIds`） |
 | `lib/status.mjs` | 纯判定：路径归一化、问题码、是否需要修复、按路径找行 |
-| `lib/acl.mjs` | 探测 WRITE_DAC/WRITE_OWNER；缺则补完全控制 ACE 并复读校验（Windows PowerShell 5.1 子进程，输出走临时文件、不占用管道） |
+| `lib/acl.mjs` | 探测 WRITE_DAC/WRITE_OWNER 与属主分类；缺则补完全控制 ACE 并复读校验；属主不是本机账户时走提权助手（子进程，输出走临时文件、不占用管道） |
+| `lib/elevate.ps1` | 只在用户点击时用 `Start-Process -Verb RunAs` 请求一次 UAC，随后以管理员身份运行 `propagate.ps1`；取消与失败分别回报，不重试 |
 | `lib/routes.mjs` | `GET /folder-trust/state`、`POST /folder-trust/trust`、`POST /folder-trust/dismiss`、`GET /folder-trust/report`、`POST /folder-trust/repair`、`GET/POST /folder-trust/debug`；只接受待办路径或已注册工作区，浏览器无法让宿主改任意目录 |
 | `client.js` | `shell.overlay` 的信任模态（2 秒轮询）、输入框的权限检查（15 秒轮询）、`settings.section` 的「工作区权限」页 |
 | `test/` | ACL 探测/授权幂等性、工作区判定与拒绝持久化、判定规则 |
@@ -64,7 +79,7 @@ DSH 的工作区行「…」菜单**没有插件扩展点**（rename/delete 是 
 ## 行为边界
 
 - **子目录会被一起铺开**：DSH 用目录句柄写入授权和 Low 标签，句柄写入不触发继承，所以工作区根可用而"早就存在"的子目录不可用。插件按 DSH 的算法自己派生同一个 S-1-4 SID（sha256(规范化路径) 的两段 30 位），按名字重写根目录的 DACL/SACL，让 Windows 把 ACE 与标签递归铺到整棵已有子树，并在子目录上抽样校验；已信任的路径启动时也补做一次，结果记在 `state.json` 的 `propagated`。
-- **不会提权**：用的是 DSH 自己的令牌。目录连 WRITE_DAC 都没有（例如属主是 SYSTEM、你只有读取或修改权限）时，插件会失败并提示改用「完全权限」或让管理员修一次。
+- **只在用户点头时提权**：正常路径用 DSH 自己的令牌补权限（不提权）。目录连 WRITE_DAC 都没有（属主是别的机器的账户、SYSTEM，或显式拒绝）时，修复会请求一次 UAC 授权，由你点「是」才执行；点「否」不改动任何东西并明确回报取消。取消后不会自动重试。
 - **工作区包含 `%TEMP%`**（例如直接拿 `C:\Users\<你>` 当工作区）时沙箱结构性不可用：信任弹窗只说明原因、不给「信任」，检查按钮与设置页把它标为不可用且不提供修复。
 - 授权只落在工作区子树，不改文件内容、不改属主、不删任何 ACE；`state.json` 记录已信任/已拒绝/已铺开的路径。
 - **解释器优先 PowerShell 7**：helper 脚本走 `Get-Acl` / `Set-Acl`（5.1 与 7 都有），Low 标签那段是 P/Invoke，两种解释器都跑得通，所以按「`pwsh`（7）→ Windows PowerShell 5.1」的顺序挑一个，`FOLDER_TRUST_POWERSHELL` 可钉住指定可执行文件。早先硬编码 `powershell.exe`，是因为脚本用了 .NET Framework 专有的 `DirectoryInfo.GetAccessControl()`——7.6（.NET 10）里没有这个方法，那是 5.1 成为硬依赖的唯一原因。

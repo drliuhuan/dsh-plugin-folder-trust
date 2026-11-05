@@ -50,6 +50,10 @@
       noteMissing: '缺少权限：',
       rightsDac: '修改权限',
       rightsOwner: '修改所有者/完整性标签',
+      ownerForeign: '这个文件夹来自另一台电脑：所有者 {owner} 不属于本机账户，你的账户无法修改它的权限。',
+      ownerShort: '所有者：来自其它电脑',
+      trustAdmin: '以管理员身份修复',
+      adminNote: '修复会弹出 Windows 的管理员授权窗口（UAC），请点「是」；点「否」不会对文件夹做任何改动。',
       checkChip: '工作区权限异常',
       checkChipHint: '当前工作区的权限不足以支持「工作区内修改」，点此查看并修复',
       checkTitle: '当前工作区权限',
@@ -100,6 +104,10 @@
       noteMissing: 'Missing rights: ',
       rightsDac: 'change permissions',
       rightsOwner: 'change owner / integrity label',
+      ownerForeign: 'This folder came from another computer: its owner ({owner}) is not a local account, so your account cannot change its permissions.',
+      ownerShort: 'owner: another computer',
+      trustAdmin: 'Repair as administrator',
+      adminNote: 'Windows will ask for administrator approval (UAC). Choose Yes; choosing No leaves the folder untouched.',
       checkChip: 'Workspace access',
       checkChipHint: 'This workspace cannot be used in workspace-write mode; open its permission report and repair it.',
       checkTitle: 'Current workspace access',
@@ -366,6 +374,11 @@
     var missing = [];
     if (current.writeDac === false) missing.push(t.rightsDac);
     if (current.writeOwner === false) missing.push(t.rightsOwner);
+    // The host already knows whether the DACL can only be rewritten through a
+    // UAC prompt (owner is another machine's account, or SYSTEM). Say so BEFORE
+    // the dialog appears, and label the button with what it will actually do.
+    var needsElevation = current.needsElevation === true || current.ownerKind === 'foreign';
+    var ownerLabel = current.ownerName || current.owner || '?';
 
     function decide() {
       if (busy) return;
@@ -418,6 +431,12 @@
       (!blockedByTemp && missing.length > 0)
         ? React.createElement('p', { className: 'dshft-note' }, t.noteMissing + missing.join(' / '))
         : null,
+      (!blockedByTemp && needsElevation)
+        ? React.createElement('p', { className: 'dshft-note' }, fmt(t.ownerForeign, { owner: ownerLabel }))
+        : null,
+      (!blockedByTemp && needsElevation && !busy)
+        ? React.createElement('p', { className: 'dshft-ignore' }, t.adminNote)
+        : null,
       (!blockedByTemp && !busy && errorText === null)
         ? React.createElement('p', { className: 'dshft-ignore' }, t.ignoreNote)
         : null,
@@ -431,7 +450,7 @@
             className: 'dshft-btn dshft-primary',
             disabled: busy,
             onClick: decide
-          }, busy ? t.busy : t.trust),
+          }, busy ? t.busy : (needsElevation ? t.trustAdmin : t.trust)),
         React.createElement('button', {
           type: 'button',
           className: 'dshft-btn dshft-secondary',
@@ -559,7 +578,13 @@
     var missing = [];
     if (permissions.writeDac === false) missing.push(t.rightsDac);
     if (permissions.writeOwner === false) missing.push(t.rightsOwner);
-    return [{ tone: 'bad', text: t.account + ': ' + t.accountMissing + missing.join(' / ') }];
+    var flags = [{ tone: 'bad', text: t.account + ': ' + t.accountMissing + missing.join(' / ') }];
+    // Name the cause, so "repair access" failing on a copied folder is explained
+    // instead of looking like a plain permission mystery.
+    if (permissions.ownerKind === 'foreign' || permissions.ownerKind === 'system') {
+      flags.push({ tone: 'warn', text: t.ownerShort });
+    }
+    return flags;
   }
 
   /** @returns {Array<{tone: string, text: string}>} sandbox-grant tag. */

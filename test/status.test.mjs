@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { entryNeedsRepair, findWorkspace, issueCodes, normalizePath, permissionFacts } from '../lib/status.mjs';
+import { entryNeedsRepair, findWorkspace, issueCodes, normalizePath, ownerNeedsElevation, permissionFacts } from '../lib/status.mjs';
 
 /** A workspace report row; override only what a case cares about. */
 function row(overrides = {}, permissions = {}) {
@@ -93,4 +93,20 @@ test('findWorkspace matches on the normalized path only', () => {
   assert.equal(findWorkspace(entries, undefined), undefined);
   assert.equal(findWorkspace([], 'E:\\Games'), undefined);
   assert.equal(findWorkspace(null, 'E:\\Games'), undefined);
+});
+
+test('only a missing WRITE_DAC on a folder the user does not own needs a UAC elevation', () => {
+  // The owner always holds WRITE_DAC implicitly, so the current account never needs
+  // help; a foreign owner (a folder copied from another PC) can only be rewritten
+  // by an enabled Administrators group, which is exactly what UAC asks about.
+  assert.equal(ownerNeedsElevation({ ok: true, writeDac: true, ownerKind: 'foreign' }), false);
+  assert.equal(ownerNeedsElevation({ ok: true, writeDac: false, ownerKind: 'current' }), false);
+  assert.equal(ownerNeedsElevation({ ok: true, writeDac: false, ownerKind: 'foreign' }), true);
+  assert.equal(ownerNeedsElevation({ ok: true, writeDac: false, ownerKind: 'system' }), true);
+  assert.equal(ownerNeedsElevation({ ok: true, writeDac: false, ownerKind: 'local-other' }), true);
+  // An unreadable probe is a different failure; it must not advertise elevation.
+  assert.equal(ownerNeedsElevation({ ok: false, writeDac: false, ownerKind: 'foreign' }), false);
+  assert.equal(ownerNeedsElevation(undefined), false);
+  // A host that predates ownerKind still reports writeDac: no elevation is implied.
+  assert.equal(ownerNeedsElevation({ ok: true, writeDac: false, ownerKind: 'unknown' }), true);
 });
