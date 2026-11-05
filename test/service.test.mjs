@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -143,6 +143,74 @@ test('dismissing persists so a restart does not prompt again', async () => {
     second.restore();
   } finally {
     process.env.TEMP = savedTemp;
+  }
+});
+
+test('repairing a dismissed workspace drops the stale dismissal', async () => {
+  // A folder the user ignored and later repaired must not stay "ignored": the report
+  // used to come back with trusted:true and dismissed:true, and persist() wrote that
+  // contradiction back to state.json on every restart.
+  const home = join(scratch, 'home-dismiss-repair');
+  const workspace = join(scratch, 'dismissed-then-repaired');
+  mkdirSync(workspace, { recursive: true });
+  const normalized = workspace.replaceAll('/', '\\').toLowerCase();
+  const { service, rows, restore } = serviceWith(home);
+  try {
+    service.start();
+    rows.push({ path: workspace, title: 'dismissed-then-repaired' });
+    service.poll();
+    await settle(service);
+    service.dismiss(workspace);
+    assert.equal(service.dismissed.has(normalized), true);
+
+    const outcome = await service.repair(workspace);
+    assert.equal(outcome.ok, true, `repair failed: ${String(outcome.message)}`);
+    assert.equal(service.dismissed.has(normalized), false, 'the service must forget the dismissal');
+    assert.equal(service.trusted.has(normalized), true);
+    assert.equal(service.propagated.has(normalized), true);
+
+    const persisted = JSON.parse(readFileSync(join(home, 'folder-trust', 'state.json'), 'utf8'));
+    assert.equal(persisted.dismissed.includes(normalized), false, 'state.json must not keep both flags');
+    assert.equal(persisted.trusted.includes(normalized), true);
+
+    const row = (await service.report(false)).workspaces.find((entry) => entry.path === workspace);
+    assert.equal(row.trusted, true);
+    assert.equal(row.dismissed, false);
+  } finally {
+    service.stop();
+    restore();
+  }
+});
+
+test('a stale dismissal on an already-trusted workspace heals on the next poll', async () => {
+  // Upgrading from a version that wrote the contradiction must not need a hand-edited
+  // state file: classify() sees the trusted entry and forgets the dismissal.
+  const home = join(scratch, 'home-heal');
+  const workspace = join(scratch, 'heal-a');
+  mkdirSync(workspace, { recursive: true });
+  mkdirSync(join(home, 'folder-trust'), { recursive: true });
+  const normalized = workspace.replaceAll('/', '\\').toLowerCase();
+  writeFileSync(join(home, 'folder-trust', 'state.json'), JSON.stringify({
+    trusted: [normalized],
+    dismissed: [normalized],
+    propagated: [normalized]
+  }), 'utf8');
+
+  const { service, rows, restore } = serviceWith(home);
+  try {
+    assert.equal(service.dismissed.has(normalized), true, 'the fixture starts contradictory');
+    service.start();
+    rows.push({ path: workspace, title: 'heal-a' });
+    service.poll();
+    await settle(service);
+
+    assert.equal(service.dismissed.has(normalized), false);
+    const persisted = JSON.parse(readFileSync(join(home, 'folder-trust', 'state.json'), 'utf8'));
+    assert.deepEqual(persisted.dismissed, []);
+    assert.deepEqual(persisted.trusted, [normalized]);
+  } finally {
+    service.stop();
+    restore();
   }
 });
 

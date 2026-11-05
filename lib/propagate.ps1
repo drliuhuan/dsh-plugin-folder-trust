@@ -212,16 +212,19 @@ try {
     }
     $result.sample = $sample
     # A folder is only usable once the Low label is ON it: the sandbox's write token is a
-    # Low-integrity, write-restricted one, so the capability grant alone is inert. Writing
-    # a label needs SeSecurityPrivilege, which the user's own token does not carry — so this
-    # can legitimately fail here. It used to be swallowed (`ok` was set unconditionally),
-    # which made the repair report success on a folder the sandbox still refused.
+    # Low-integrity, write-restricted one, so the capability grant alone is inert.
+    # Writing the label needs WRITE_OWNER on the object, which this script has already
+    # established by the time it gets here: the FullControl ACE added in step 1 includes
+    # it, and the owner holds WRITE_DAC implicitly. SeSecurityPrivilege is NOT required
+    # (measured: a folder owned by the signed-in account takes the label without any
+    # elevation), so a failure here means the account really is missing the right —
+    # a deny entry, or an owner that is somebody else — and only an elevation can help.
     if ($result.labelApplied -eq $true) {
         $result.ok = $true
     } else {
         $detail = if ($result.labelError) { $result.labelError } else { 'unknown error' }
         $result.ok = $false
-        $result.error = 'the Low integrity label could not be written: ' + $detail + ' — an administrator has to run DSH once, or this session has to switch to full access'
+        $result.error = 'the Low integrity label could not be written: ' + $detail + ' — this account lacks change-owner rights on the folder, so an administrator has to repair it once, or the session has to switch to full access'
     }
     Log ('DONE 修复完成 ok=' + $result.ok)
 } catch {

@@ -82,6 +82,8 @@ DSH 的工作区行「…」菜单**没有插件扩展点**（rename/delete 是 
 - **只在用户点头时提权**：正常路径用 DSH 自己的令牌补权限（不提权）。目录连 WRITE_DAC 都没有（属主是别的机器的账户、SYSTEM，或显式拒绝）时，修复会请求一次 UAC 授权，由你点「是」才执行；点「否」不改动任何东西并明确回报取消。取消后不会自动重试。
 - **工作区包含 `%TEMP%`**（例如直接拿 `C:\Users\<你>` 当工作区）时沙箱结构性不可用：信任弹窗只说明原因、不给「信任」，检查按钮与设置页把它标为不可用且不提供修复。
 - 授权只落在工作区子树，不改文件内容、不改属主、不删任何 ACE；`state.json` 记录已信任/已拒绝/已铺开的路径。
+- **忽略与受信互斥**：信任或修复成功后，路径会从 `dismissed` 移出——同一路径不会既「已忽略」又「已受信」。旧版本留下的矛盾状态（两个集合都有）会在下一次启动分类到 `trusted` 时自动清掉并回写 `state.json`，不需要手改文件。
+- **标签写入不需要提权**：写 Low 完整性标签要的是对象上的 WRITE_OWNER，而修复写进去的完全控制已经包含它（所有者本身还有隐式 WRITE_DAC），所以普通账户能直接写完；只有连这个权利都没有（属主是别人、或显式拒绝）时才需要管理员授权。
 - **解释器优先 PowerShell 7**：helper 脚本走 `Get-Acl` / `Set-Acl`（5.1 与 7 都有），Low 标签那段是 P/Invoke，两种解释器都跑得通，所以按「`pwsh`（7）→ Windows PowerShell 5.1」的顺序挑一个，`FOLDER_TRUST_POWERSHELL` 可钉住指定可执行文件。早先硬编码 `powershell.exe`，是因为脚本用了 .NET Framework 专有的 `DirectoryInfo.GetAccessControl()`——7.6（.NET 10）里没有这个方法，那是 5.1 成为硬依赖的唯一原因。
 - **5.1 会拿到自己的模块路径**：5.1 若继承 PowerShell 7 的 `PSModulePath`，会把 `Microsoft.PowerShell.Security` 解析到 7 的程序集上、加载失败，于是 `Get-Acl` 直接报「成员已存在」——恰恰在「没有自己的 PowerShell 7、但宿主跑在 7 之下」的机器上把回退打掉。因此 spawn 5.1 时把 `PSModulePath` 重建成它的三个目录（用户、机器、System32），7 则保持继承。
 - **提权只认全局解释器**：跨 UAC 边界时裸 `pwsh.exe` 没有路径给 ShellExecute，用户目录里的便携版（例如插件安装在 AppData 下的那份）还可能属于 UAC 切换到的另一个管理员账户。所以提权固定用绝对路径的机器级 PowerShell：装了系统级 7 就用它，否则用 System32 的 5.1。启动参数按需加引号，用户目录带空格（`C:\Users\John Smith`）也不会被拆开。
