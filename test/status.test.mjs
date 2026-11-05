@@ -95,18 +95,19 @@ test('findWorkspace matches on the normalized path only', () => {
   assert.equal(findWorkspace(null, 'E:\\Games'), undefined);
 });
 
-test('only a missing WRITE_DAC on a folder the user does not own needs a UAC elevation', () => {
-  // The owner always holds WRITE_DAC implicitly, so the current account never needs
-  // help; a foreign owner (a folder copied from another PC) can only be rewritten
-  // by an enabled Administrators group, which is exactly what UAC asks about.
+test('a missing WRITE_DAC always needs a UAC elevation, whoever owns the folder', () => {
+  // Two things remove the right: an owner that is not the signed-in account (another
+  // machine's SID, SYSTEM, builtin), or a deny ACE that strips it even from the owner.
+  // Both are only rewritable by an enabled Administrators group, i.e. through UAC.
   assert.equal(ownerNeedsElevation({ ok: true, writeDac: true, ownerKind: 'foreign' }), false);
-  assert.equal(ownerNeedsElevation({ ok: true, writeDac: false, ownerKind: 'current' }), false);
   assert.equal(ownerNeedsElevation({ ok: true, writeDac: false, ownerKind: 'foreign' }), true);
   assert.equal(ownerNeedsElevation({ ok: true, writeDac: false, ownerKind: 'system' }), true);
   assert.equal(ownerNeedsElevation({ ok: true, writeDac: false, ownerKind: 'local-other' }), true);
+  // A deny ACE on a folder you own looks like this; ownerKind does not change the answer.
+  assert.equal(ownerNeedsElevation({ ok: true, writeDac: false, ownerKind: 'current' }), true);
   // An unreadable probe is a different failure; it must not advertise elevation.
   assert.equal(ownerNeedsElevation({ ok: false, writeDac: false, ownerKind: 'foreign' }), false);
   assert.equal(ownerNeedsElevation(undefined), false);
-  // A host that predates ownerKind still reports writeDac: no elevation is implied.
+  // A host that predates ownerKind still reports writeDac: the answer stays the same.
   assert.equal(ownerNeedsElevation({ ok: true, writeDac: false, ownerKind: 'unknown' }), true);
 });

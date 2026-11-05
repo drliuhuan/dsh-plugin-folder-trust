@@ -377,7 +377,12 @@
     // The host already knows whether the DACL can only be rewritten through a
     // UAC prompt (owner is another machine's account, or SYSTEM). Say so BEFORE
     // the dialog appears, and label the button with what it will actually do.
-    var needsElevation = current.needsElevation === true || current.ownerKind === 'foreign';
+    // The host already knows whether the DACL can only be rewritten through a UAC
+    // prompt. Say so BEFORE the dialog appears, and label the button with what it will
+    // actually do. The owner note is separate: a deny ACE on a folder you own still
+    // needs elevation but is not "from another computer".
+    var needsElevation = current.needsElevation === true;
+    var ownerIsForeign = current.ownerKind === 'foreign' || current.ownerKind === 'system';
     var ownerLabel = current.ownerName || current.owner || '?';
 
     function decide() {
@@ -431,13 +436,13 @@
       (!blockedByTemp && missing.length > 0)
         ? React.createElement('p', { className: 'dshft-note' }, t.noteMissing + missing.join(' / '))
         : null,
-      (!blockedByTemp && needsElevation)
+      (!blockedByTemp && ownerIsForeign)
         ? React.createElement('p', { className: 'dshft-note' }, fmt(t.ownerForeign, { owner: ownerLabel }))
         : null,
-      (!blockedByTemp && needsElevation && !busy)
-        ? React.createElement('p', { className: 'dshft-ignore' }, t.adminNote)
+      (!blockedByTemp && needsElevation)
+        ? React.createElement('p', { className: 'dshft-note' }, t.adminNote)
         : null,
-      (!blockedByTemp && !busy && errorText === null)
+      (!blockedByTemp && !busy && errorText === null && !needsElevation)
         ? React.createElement('p', { className: 'dshft-ignore' }, t.ignoreNote)
         : null,
       errorText === null ? null : React.createElement('p', { className: 'dshft-error' }, errorText),

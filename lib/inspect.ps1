@@ -119,18 +119,25 @@ try {
     # instead of repeating "permission denied".
     $acl = Get-Acl -LiteralPath $Path
     $meSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-    # Get-Acl returns the owner in SDDL form ("O:S-1-5-21-..."), not a bare SID.
-    $ownerSid = ([string]$acl.Owner) -replace '^O:', ''
-    $report.owner = $ownerSid
-    $report.ownerName = $ownerSid
-    if ($ownerSid.Length -gt 0) {
+    # Get-Acl is inconsistent by design: it returns a *display name*
+    # ("NT AUTHORITY\SYSTEM", "PC\User") when the SID resolves on this machine, and
+    # the SDDL form ("O:S-1-5-21-...") only when it does not. Both must classify.
+    $ownerValue = ([string]$acl.Owner) -replace '^O:', ''
+    $report.owner = $ownerValue
+    $report.ownerName = $ownerValue
+    if ($ownerValue.Length -gt 0) {
         try {
-            $ownerIdentity = New-Object System.Security.Principal.SecurityIdentifier($ownerSid)
+            if ($ownerValue -match '^S-1-') {
+                $ownerIdentity = New-Object System.Security.Principal.SecurityIdentifier($ownerValue)
+            } else {
+                $ownerIdentity = (New-Object System.Security.Principal.NTAccount($ownerValue)).Translate([System.Security.Principal.SecurityIdentifier])
+            }
+            $report.owner = $ownerIdentity.Value
             try { $report.ownerName = $ownerIdentity.Translate([System.Security.Principal.NTAccount]).Value }
-            catch { $report.ownerName = $ownerSid }
+            catch { $report.ownerName = $ownerIdentity.Value }
             if ($ownerIdentity.Value -eq $meSid) { $report.ownerKind = 'current' }
-            elseif ($ownerSid -eq 'S-1-5-18' -or $ownerSid.StartsWith('S-1-5-32-')) { $report.ownerKind = 'system' }
-            elseif ($report.ownerName -eq $ownerSid) { $report.ownerKind = 'foreign' }
+            elseif ($ownerIdentity.Value -eq 'S-1-5-18' -or $ownerIdentity.Value.StartsWith('S-1-5-32-')) { $report.ownerKind = 'system' }
+            elseif ($report.ownerName -eq $ownerIdentity.Value) { $report.ownerKind = 'foreign' }
             else { $report.ownerKind = 'local-other' }
         } catch {
             $report.ownerKind = 'unknown'
