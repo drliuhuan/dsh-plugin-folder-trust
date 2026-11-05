@@ -30,14 +30,26 @@ $result = [ordered]@{
     error = $null
 }
 
+# `Start-Process -ArgumentList` joins this array with spaces and does NOT quote
+# entries, under both 5.1 and 7. A user profile such as "C:\Users\John Smith" would
+# otherwise split `-File C:\Users\John Smith\...\propagate.ps1` into two arguments and
+# the elevated helper would exit without a result. Quote only what needs it, so the
+# common no-space path stays byte-identical to what was tested.
+function Format-Argument([string]$value) {
+    if ($value -match '[\s"]') {
+        return '"' + ($value -replace '"', '\"') + '"'
+    }
+    return $value
+}
+
 $arguments = @(
     '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-    '-File', $Inner,
-    '-Path', $Path,
-    '-Sid', $Sid,
-    '-Out', $Out
+    '-File', (Format-Argument $Inner),
+    '-Path', (Format-Argument $Path),
+    '-Sid', (Format-Argument $Sid),
+    '-Out', (Format-Argument $Out)
 )
-if ($Log) { $arguments += @('-Log', $Log) }
+if ($Log) { $arguments += @('-Log', (Format-Argument $Log)) }
 
 try {
     $process = Start-Process -FilePath $Interpreter -Verb RunAs -Wait -PassThru -ArgumentList $arguments

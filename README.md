@@ -18,7 +18,11 @@ See [README.zh.md](README.zh.md) for the full design notes (Chinese).
 ## Requirements
 
 Windows 10/11. The permission helpers run under PowerShell 7 when it is installed and fall back to
-Windows PowerShell 5.1 otherwise; `FOLDER_TRUST_POWERSHELL` pins one explicitly.
+Windows PowerShell 5.1 otherwise; `FOLDER_TRUST_POWERSHELL` pins one explicitly. No plugin is
+required: 5.1 ships with Windows, and it is spawned with a 5.1-only `PSModulePath` so a PowerShell 7
+module path inherited from the host cannot break `Get-Acl`. The UAC-elevated repair always names a
+machine-wide interpreter (a system PowerShell 7, else System32's 5.1), never a PATH lookup or a
+per-user portable install.
 
 ## License
 
