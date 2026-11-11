@@ -1,9 +1,10 @@
 // Shared Windows ACL helpers for the folder-trust tests.
 //
 // Node cannot write a security descriptor, so the fixtures that matter for the
-// protected-DACL regression are built with the platform tools: `icacls` disables
-// inheritance (which is exactly the shape `Set-Acl` used to fail on) and grants the
-// signed-in account the rights a folder copied from another machine typically has.
+// protected-DACL regression are built with PowerShell: one Set-Acl write that sets
+// the protected ("inheritance disabled") flag and the account's Modify ACE together.
+// A second Set-Acl on that folder would need SeSecurityPrivilege, which is exactly the
+// shape the repair has to cope with; building the fixture in one write avoids it.
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -19,28 +20,26 @@ export function run(command, args) {
   return result;
 }
 
-let sid;
-
-/** The signed-in account's SID; the `*SID` form keeps icacls independent of locale. */
-export function currentSid() {
-  if (sid !== undefined) return sid;
-  const output = spawnSync('whoami', ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8', windowsHide: true }).stdout;
-  const match = /"(S-1-[0-9-]+)"/.exec(output ?? '');
-  assert.ok(match, `whoami did not report a SID: ${String(output)}`);
-  sid = match[1];
-  return sid;
-}
-
 /**
  * Give `dir` a protected (inheritance-disabled) DACL with one explicit ACE for the
- * signed-in account. With rights `(M)` the owner keeps the implicit WRITE_DAC but not
+ * signed-in account. With `Modify` the owner keeps the implicit WRITE_DAC but not
  * WRITE_OWNER — the shape a repair has to extend without elevation.
  * @param {string} dir absolute directory path.
- * @param {string} [rights] icacls rights string, default `(M)`.
+ * @param {string} [rights] FileSystemRights name, default `Modify`.
  */
-export function protectDacl(dir, rights = '(M)') {
-  run('icacls', [dir, '/inheritance:r']);
-  run('icacls', [dir, '/grant:r', `*${currentSid()}:${rights}`]);
+export function protectDacl(dir, rights = 'Modify') {
+  const script = [
+    `$acl = Get-Acl -LiteralPath '${dir}'`,
+    '$acl.SetAccessRuleProtection($true, $false)',
+    '$me = [System.Security.Principal.WindowsIdentity]::GetCurrent().User',
+    `$acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($me, [System.Security.AccessControl.FileSystemRights]'${rights}', 'Allow')))`,
+    `Set-Acl -LiteralPath '${dir}' -AclObject $acl -ErrorAction Stop`
+  ].join('; ');
+  // PowerShell 7, not 5.1: a 5.1 child launched from the PowerShell 7 host inherits
+  // 7's PSModulePath, cannot load Microsoft.PowerShell.Security, and every Get-Acl /
+  // Set-Acl fails with "module could not be loaded". The plugin rebuilds the module
+  // path for 5.1; the test helper simply uses the interpreter the plugin prefers.
+  run('pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command', script]);
 }
 
 /**
