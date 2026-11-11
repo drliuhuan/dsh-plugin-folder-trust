@@ -14,6 +14,7 @@ $report = [ordered]@{
     ok = $false
     writeDac = $false
     writeOwner = $false
+    protected = $false
     owner = $null
     ownerName = $null
     ownerKind = 'unknown'
@@ -118,6 +119,7 @@ try {
     # can rewrite that DACL. Classifying the owner here lets the browser say why
     # instead of repeating "permission denied".
     $acl = Get-Acl -LiteralPath $Path
+    $report.protected = [bool]$acl.AreAccessRulesProtected
     $meSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
     # Get-Acl is inconsistent by design: it returns a *display name*
     # ("NT AUTHORITY\SYSTEM", "PC\User") when the SID resolves on this machine, and

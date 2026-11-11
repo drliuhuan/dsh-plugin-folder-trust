@@ -37,6 +37,17 @@ test('a fully provisioned workspace has no issues and needs no repair', () => {
   assert.equal(entryNeedsRepair(entry), false);
 });
 
+test('a protected DACL is exposed but is not an issue by itself', () => {
+  // The repair writes the DACL directly, so inheritance being disabled is a fact, not a
+  // verdict. A fully provisioned protected workspace must stay "no issues".
+  const entry = row({}, { protected: true });
+  assert.equal(permissionFacts(entry).protected, true);
+  assert.deepEqual(issueCodes(entry), []);
+  assert.equal(entryNeedsRepair(entry), false);
+  // An older host does not report the flag; absence of the fact is not an issue.
+  assert.equal(permissionFacts(row()).protected, false);
+});
+
 test('missing account rights are reported as writeDac / writeOwner', () => {
   assert.deepEqual(issueCodes(row({}, { writeDac: false })), ['writeDac']);
   assert.deepEqual(issueCodes(row({}, { writeOwner: false })), ['writeOwner']);

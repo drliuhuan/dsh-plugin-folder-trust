@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { FolderTrustService } from '../lib/service.mjs';
+import { denyWriteDac, protectDacl } from './helpers.mjs';
 
 const scratch = mkdtempSync(join(tmpdir(), 'folder-trust-svc-'));
 
@@ -178,6 +179,28 @@ test('repairing a dismissed workspace drops the stale dismissal', async () => {
     assert.equal(row.dismissed, false);
   } finally {
     service.stop();
+    restore();
+  }
+});
+
+test('a repair that leaves a child unprovisioned is reported as failed', async () => {
+  // The root gets its grant and label, but a child whose DACL explicitly denies
+  // WRITE_DAC cannot be rewritten even by its owner. The repair must surface that
+  // instead of answering ok:true and leaving the confined shell refused inside it.
+  const home = join(scratch, 'home-children-failed');
+  const workspace = join(scratch, 'children-failed');
+  mkdirSync(workspace, { recursive: true });
+  const locked = join(workspace, 'locked');
+  mkdirSync(locked);
+  protectDacl(locked);
+  denyWriteDac(locked);
+  const { service, rows, restore } = serviceWith(home);
+  try {
+    rows.push({ path: workspace, title: 'children-failed' });
+    const outcome = await service.repair(workspace);
+    assert.equal(outcome.ok, false, 'a partial repair must not be reported as success');
+    assert.match(String(outcome.message), /subfolder/i);
+  } finally {
     restore();
   }
 });

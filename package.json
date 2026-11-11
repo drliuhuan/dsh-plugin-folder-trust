@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-folder-trust",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Windows: when a new workspace folder is added, ask once whether to trust it, then grant the NTFS rights DSH's workspace-write sandbox needs. When the folder is owned by another machine's account, the repair asks Windows for one approved UAC elevation instead of failing. Also shows a permission check in the composer when the current workspace is unusable, and lists every workspace in Settings.",
   "type": "module",
   "license": "MIT",
