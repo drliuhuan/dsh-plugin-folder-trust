@@ -63,7 +63,10 @@ test('grantFullControl repairs a folder whose DACL is protected (inheritance dis
   protectDacl(dir);
   const before = await probeDirectory(dir);
   assert.equal(before.writeDac, true);
-  assert.equal(before.writeOwner, false);
+  // Do not assert writeOwner=false here: an elevated CI runner holds SeRestorePrivilege,
+  // and CreateFileW with BACKUP_SEMANTICS then opens the protected folder for WRITE_OWNER
+  // even though its DACL grants only Modify. The regression under test is the DACL write,
+  // not the probe's privilege-dependent answer.
   const granted = await grantFullControl(dir);
   assert.equal(granted.ok, true, `grant failed: ${String(granted.error)}`);
   assert.equal(granted.changed, true);
